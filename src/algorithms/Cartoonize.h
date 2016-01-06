@@ -30,7 +30,7 @@ public:
 	Image edgeStrength(Image &picX, Image &picY);
 	Image edgeDetection(Image &pic);
 	Pixel binaryKernel(const Image &pic, int y, int x, char op);
-	Image Cartoonize::binaryFilter(const Image &pic, char op);
+	Image binaryFilter(const Image &pic, char op);
 	Pixel calcEdgeStrengthPixelwise(int y, int x, Image &picX, Image &picY);
 	Pixel calcEdgeDetectionPixelwise(int y, int x, Image &pic);
 	double adaptPixelColor(double rgb);
