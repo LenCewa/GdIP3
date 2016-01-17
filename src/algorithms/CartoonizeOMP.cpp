@@ -20,9 +20,9 @@ void CartoonizeOMP::process(const Parameters &params, const Image &src, Image &d
 	OMPtau = params.tau;
 
 	dst = src;
-	/*Image bil = bilateralFilter(src);
+	Image bil = bilateralFilter(src);
 	Image bin = binaryTraversion(src);
-	dst = cartoonize(bil, bin);*/
+	dst = cartoonize(bil, bin);
 
 	end = clock();
 	runtime = end - start;
@@ -36,7 +36,7 @@ void CartoonizeOMP::process(const Parameters &params, const Image &src, Image &d
 	//************************************************************************
 	int nthreads, tid;
 	/* Fork a team of threads giving them their own copies of variables */
-	#pragma omp parallel private(nthreads, tid)
+#pragma omp parallel private(nthreads, tid)
 	{
 		/* Obtain thread number */
 		tid = omp_get_thread_num();
@@ -70,7 +70,7 @@ void CartoonizeOMP::destroy2DArray(double **array)
 }
 
 //------------------------------------
-// BEGIN - BILATERAL OMP
+// BEGIN - BILATERAL
 //------------------------------------
 
 Image CartoonizeOMP::bilateralFilter(const Image &pic)
@@ -80,6 +80,7 @@ Image CartoonizeOMP::bilateralFilter(const Image &pic)
 	Image result = Image(H, W);
 
 	for (int y = 0; y < H; ++y)
+#pragma omp parallel for
 		for (int x = 0; x < W; ++x)
 			if (!inRange(OMPkernelSize, y, x, H, W)) {
 				result[y][x] = pic[y][x];
@@ -101,6 +102,7 @@ Pixel CartoonizeOMP::bilateralKernel(const Image &pic, int y, int x)
 	int appliedKernelS = OMPkernelSize / 2;
 
 	for (int k = y - appliedKernelS; k < y + appliedKernelS; k++) {
+#pragma omp parallel for
 		for (int l = x - appliedKernelS; l < x + appliedKernelS; l++) {
 			const Pixel &pixel = pic[k][l];
 			zaehler_r += kernel[h][w] * pixel.r;
@@ -128,6 +130,7 @@ double** CartoonizeOMP::createAndInitializeKernel(const Image &pic, int y, int x
 	// Kernel erstellen (double 2D Matrix)
 	double **kernel = create2DArray(OMPkernelSize, OMPkernelSize);
 	for (int k = y - appliedKernelS; k < y + appliedKernelS; k++) {
+#pragma omp parallel for
 		for (int l = x - appliedKernelS; l < x + appliedKernelS; l++) {
 			kernel[h][w] = calculateKernelField(pic, y, x, k, l);
 			w++;
@@ -169,11 +172,11 @@ double CartoonizeOMP::cEdge(const Image &pic, int y, int x, int k, int l)
 double CartoonizeOMP::euklidNorm(int r, int g, int b) { return std::sqrt((r * r) + (g * g) + (b * b)); }
 
 //------------------------------------
-// END - BILATERAL OMP
+// END - BILATERAL
 //------------------------------------
 
 //------------------------------------
-// BEGIN - BINARY OMP
+// BEGIN - BINARY
 //------------------------------------
 
 Image CartoonizeOMP::binaryTraversion(const Image &pic)
@@ -185,8 +188,8 @@ Image CartoonizeOMP::binaryTraversion(const Image &pic)
 	Image G_t = Image(pic.height(), pic.width());
 
 	g = binaryFilter(pic, 'b'); // blur := 'b'
-	g_x = binaryFilter(g, 'X');	  // partielle Ableitung in X := 'dX'
-	g_y = binaryFilter(g, 'Y');	  // partielle Ableitung in Y := 'dY'
+	g_x = binaryFilter(g, 'X');               // partielle Ableitung in X := 'dX'
+	g_y = binaryFilter(g, 'Y');               // partielle Ableitung in Y := 'dY'
 	G = edgeStrength(g_x, g_y);
 	G_t = edgeDetection(G);
 
@@ -200,6 +203,7 @@ Image CartoonizeOMP::binaryFilter(const Image &pic, char op)
 	Image result = Image(H, W);
 
 	for (int y = 0; y < H; ++y) {
+#pragma omp parallel for
 		for (int x = 0; x < W; ++x) {
 
 			if (!inRange(3, y, x, H, W)) {
@@ -233,6 +237,7 @@ Pixel CartoonizeOMP::binaryKernel(const Image &pic, int y, int x, char op)
 	// Hint: Kernel size ist immer 3 --> (int) 3 / 2 = 1
 
 	for (int i = y - 1; i <= y + 1; i++) {
+#pragma omp parallel for
 		for (int j = x - 1; j <= x + 1; j++) {
 			const Pixel &pixel = pic[i][j];
 			r += k[h][w] * pixel.r;
@@ -337,20 +342,29 @@ Pixel CartoonizeOMP::calcEdgeDetectionPixelwise(int y, int x, Image &pic)
 {
 	double r, g, b;
 	const Pixel &pixel = pic[y][x];
-
-	r = (OMPtau >= pixel.r) ? pixel.r : 0.0;
-	g = (OMPtau >= pixel.g) ? pixel.g : 0.0;
-	b = (OMPtau >= pixel.b) ? pixel.b : 0.0;
+	if (pixel.r > OMPtau && pixel.g > OMPtau && pixel.b > OMPtau){
+		r = 0.0;
+		g = 0.0;
+		b = 0.0;
+	}
+	else{
+		r = 255.0;
+		g = 255.0;
+		b = 255.0;
+	}
+	/*r = (tau < pixel.r) ? 255.0 : 0.0;
+	g = (tau < pixel.g) ? 255.0 : 0.0;
+	b = (tau < pixel.b) ? 255.0 : 0.0;*/
 
 	return Pixel(r, g, b);
 }
 
 //------------------------------------
-// END - BINARY OMP
+// END - BINARY
 //------------------------------------
 
 //------------------------------------
-// BEGIN - CARTOONIZED OMP
+// BEGIN - CARTOONIZED
 //------------------------------------
 
 Image CartoonizeOMP::cartoonize(Image &bil, Image &bin)
@@ -360,13 +374,14 @@ Image CartoonizeOMP::cartoonize(Image &bil, Image &bin)
 	const int W = std::min(bin.width(), bin.width());
 	Image result = Image(H, W);
 
-	for (int y = 0; y < H; ++y)
+	for (int y = 0; y < H; ++y){
+#pragma omp parallel for
 		for (int x = 0; x < W; ++x) {
 			const Pixel pBil = bil[y][x];
 			const Pixel pBin = bin[y][x];
 			result[y][x] = compare(pBil, pBin);
 		}
-
+	}
 	return result;
 }
 
@@ -387,5 +402,5 @@ Pixel CartoonizeOMP::compare(const Pixel &pBil, const Pixel &pBin)
 }
 
 //------------------------------------
-// END - CARTOONIZED OMP
+// END - CARTOONIZED
 //------------------------------------

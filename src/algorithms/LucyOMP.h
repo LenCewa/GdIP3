@@ -13,6 +13,7 @@ public:
 	bool inRange(int x, const int width);
 	Pixel kernelOperation(double kernel, const Image &src, int y, int x);
 	Image elementwiseArithmeticOperation(const Image &left, const Image &right, char op);
+	Pixel rightRim(double kernel, const Image& src, int y, int x, int width);
 };
 
 #endif

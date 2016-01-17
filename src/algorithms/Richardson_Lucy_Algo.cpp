@@ -9,7 +9,7 @@ void Richardson_Lucy_Algo::process(const Parameters &params, const Image &src, I
 	std::clock_t start, end, runtime;
 	start = clock();
 	float duration;
-
+	double time = omp_get_wtime();
 	const int n = params.paramL;
 	double kernel = 51.0;
 	dst = src;

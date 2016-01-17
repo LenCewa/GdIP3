@@ -9,25 +9,27 @@ void LucyOMP::process(const Parameters &params, const Image &src, Image &dst)
 	std::clock_t start, end, runtime;
 	start = clock();
 	float duration;
+	double s = omp_get_wtime();
 
 	const int n = params.paramL;
 	double kernel = 51.0;
 	dst = src;
 	Image b, u, d;
 
-		for (int i = 0; i < n; i++) {
-			b = filter(kernel, dst);
-			u = elementwiseArithmeticOperation(src, b, '/');
-			d = filter(kernel, u);
-			dst = elementwiseArithmeticOperation(dst, d, '*');
-		}
+	for (int i = 0; i < n; i++) {
+		b = filter(kernel, dst);
+		u = elementwiseArithmeticOperation(src, b, '/');
+		d = filter(kernel, u);
+		dst = elementwiseArithmeticOperation(dst, d, '*');
+	}
 
+	double e = omp_get_wtime() - s;
 	end = clock();
 	runtime = end - start;
 	duration = 1000 * (float)runtime / CLOCKS_PER_SEC;
 
 	printf("Iterationen: %i\n", params.paramL);
-	printf("Dauer: %f ms\n", duration);
+	printf("Dauer: %fms [CLOCKS_PER_SEC] -|- %fms [omp_get_wtime()]\n", duration, e);
 
 
 	//************************************************************************
@@ -35,7 +37,7 @@ void LucyOMP::process(const Parameters &params, const Image &src, Image &dst)
 	//************************************************************************
 	int nthreads, tid;
 	/* Fork a team of threads giving them their own copies of variables */
-	#pragma omp parallel private(nthreads, tid)
+#pragma omp parallel private(nthreads, tid)
 	{
 		/* Obtain thread number */
 		tid = omp_get_thread_num();
@@ -53,23 +55,91 @@ void LucyOMP::process(const Parameters &params, const Image &src, Image &dst)
 
 Image LucyOMP::filter(double kernel, const Image &src)
 {
-	Image dst = src; // TOOD Abändern zu dst = Image(height, width); 
-	// Dimension holen
 	const int height = src.height();
 	const int width = src.width();
+	Image dst = src;
+	omp_set_num_threads(2);
+#pragma omp parallel for
 
-	for (int y = 0; y < height; ++y) {
-		for (int x = 0; x < width; ++x) {
-			if (!inRange(x, width)) {
-				dst[y][x] = Pixel(255.0 / kernel, 255.0 / kernel, 255.0 / kernel);
-				continue;
+	for (int y = 0; y < height; y++) {
+		double r = 0.0, g = 0.0, b = 0.0;
+#pragma omp parallel for schedule(static, 51)
+
+		for (int x = 0; x < width; x++) {
+			const Pixel &pixel = src[y][x];
+			r += pixel.r / kernel;
+			g += pixel.g / kernel;
+			b += pixel.b / kernel;
+
+			int count = (kernel - 1) - (x % 50);
+			if (x >= (kernel - 1)) {
+				dst[y][x - ((int)kernel / 2)] = Pixel(r, g, b);
+				const Pixel &pix = src[y][x - (kernel - 1)];
+				r -= pix.r / kernel;
+				g -= pix.g / kernel;
+				b -= pix.b / kernel;
 			}
-			dst[y][x] = kernelOperation(kernel, src, y, x);
+			//Randbehandlung links
+			if (x < (kernel - 1)){
+				//weisse Pixel hinzurechnen
+				r += ((255.0 / kernel)*count);
+				g += ((255.0 / kernel)*count);
+				b += ((255.0 / kernel)*count);
+				dst[y][x] = Pixel(r, g, b);
+				//weisse Pixel wieder abziehen
+				r -= ((255.0 / kernel)*count);
+				g -= ((255.0 / kernel)*count);
+				b -= ((255.0 / kernel)*count);
+			}
+		}
+		//Randbehandlung rechts
+#pragma omp parallel for
+		for (int x = width - 25; x < width; x++)
+			dst[y][x] = rightRim(kernel, src, y, x, width);
+	}
+	return dst;
+
+
+	//Image dst = src; // TOOD Abändern zu dst = Image(height, width); 
+	//// Dimension holen
+	//const int height = src.height();
+	//const int width = src.width();
+
+	//for (int y = 0; y < height; ++y) {
+	//	for (int x = 0; x < width; ++x) {
+	//		if (!inRange(x, width)) {
+	//			dst[y][x] = Pixel(255.0 / kernel, 255.0 / kernel, 255.0 / kernel);
+	//			continue;
+	//		}
+	//		dst[y][x] = kernelOperation(kernel, src, y, x);
+	//	}
+	//}
+
+	//return dst;
+}
+
+Pixel LucyOMP::rightRim(double kernel, const Image &src, int y, int x, int width)
+{
+	double r = 0.0, g = 0.0, b = 0.0;
+	// Alle Pixel links normal hinzufuegen und Pixel rechts muessen mit weiss aufgefuellt werden
+
+#pragma omp parallel for
+	for (int w = x - 25; w <= x + 25; w++) {
+		if (x < width) {
+			const Pixel &pixel = src[y][x];
+			r += pixel.r / kernel;
+			g += pixel.g / kernel;
+			b += pixel.b / kernel;
+		}
+		else {
+			r += 255.0 / kernel;
+			g += 255.0 / kernel;
+			b += 255.0 / kernel;
 		}
 	}
-	
-	return dst;
+	return Pixel(r, g, b);
 }
+
 
 // Checkt ob rechts und links vom Pixel mindestens 25 weitere Pixel sind um in Range zu sein
 bool LucyOMP::inRange(int x, const int width) { return (x - 25 < 0 || x + 25 > width) ? false : true; }
